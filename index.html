@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHBvbHlnb24gcG9pbnRzPSIxNiwyIDMwLDE2IDE2LDMwIDIsMTYiIGZpbGw9IiMzNEE1Q0IiLz4KPC9zdmc+"
+    />
+    <title>Daily Ritual · B as in BALD</title>
+  </head>
+  <body>
+    <!-- HEADER -->
+    <header>
+      <div class="header-top">
+        <div class="header-left">
+          <div class="date-line" id="dateLine"></div>
+          <div class="app-title">Ritual</div>
+          <div class="moment-subtitle" id="momentSubtitle"></div>
+        </div>
+        <div class="header-controls">
+          <div class="daytype-toggle">
+            <button
+              class="daytype-btn"
+              id="btn-workday"
+              onclick="setDayType('workday')"
+            >
+              Work day
+            </button>
+            <button
+              class="daytype-btn"
+              id="btn-nonwork"
+              onclick="setDayType('nonwork')"
+            >
+              Day off
+            </button>
+          </div>
+          <button
+            class="theme-toggle"
+            id="themeBtn"
+            onclick="toggleTheme()"
+            title="Toggle theme"
+          ></button>
+        </div>
+      </div>
+    </header>
+
+    <!-- MOMENT NAV -->
+    <nav class="moment-nav" id="momentNav"></nav>
+
+    <!-- CARD CONTAINER -->
+    <div id="cardContainer" style="width: 100%; max-width: var(--max)"></div>
+
+    <!-- LOG -->
+    <div class="divider"></div>
+    <div class="log-section">
+      <div class="log-header">
+        <div class="log-title">Running log</div>
+        <button class="log-clear" onclick="clearLog()">clear all</button>
+      </div>
+      <div id="logList">
+        <div class="log-empty">No entries yet. Complete a ritual to begin.</div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", (event) => {
+        init();
+      });
+    </script>
+  </body>
+</html>
