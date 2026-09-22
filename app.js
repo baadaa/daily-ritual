@@ -140,6 +140,105 @@ const WORKDAY_MOMENTS = [
   },
 ];
 
+/* ── INBOX (weeknight vs. Friday variant) ── */
+const WD_INBOX_WEEKDAY = {
+  id: "wd-inbox-weekday",
+  label: "Inbox",
+  time: "~9:30pm",
+  title: "Nightly clear",
+  cost: "10 min · inbox",
+  glyph: "▤",
+  successSub: "Inbox cleared.",
+  accent: "var(--wd-inbox)",
+  footnote:
+    "<strong>Standing rule:</strong> anything untouched 2+ weeks — inbox, saves, bookmarks — gets archived without a re-review.",
+  fields: [
+    {
+      id: "steps",
+      type: "checklist",
+      required: true,
+      label: "Steps completed",
+      items: [
+        {
+          id: "collect",
+          label: "Collect",
+          detail:
+            "AudioPen notes, paper and Post-its from today (photograph or transcribe, then toss the paper), anything new in email — all into the inbox.",
+        },
+        {
+          id: "sort",
+          label: "Sort",
+          detail:
+            "Route each item: task manager, project note, or reference. Don't edit — just direct traffic.",
+        },
+        {
+          id: "clear",
+          label: "Clear",
+          detail: "Inbox empty, or close to it, before the laptop shuts.",
+        },
+      ],
+    },
+  ],
+  snippetField: "steps",
+  successField: "steps",
+};
+
+const WD_INBOX_FRIDAY = {
+  id: "wd-inbox-friday",
+  label: "Inbox",
+  time: "~9:30pm",
+  title: "Friday purge",
+  cost: "15 min · weekly",
+  glyph: "▤",
+  successSub: "Purged. Onto Day close.",
+  accent: "var(--wd-inbox)",
+  footnote:
+    "<strong>Standing rule:</strong> anything untouched 2+ weeks — inbox, saves, bookmarks — gets archived without a re-review.",
+  fields: [
+    {
+      id: "steps",
+      type: "checklist",
+      required: true,
+      label: "Steps completed",
+      items: [
+        {
+          id: "sweep",
+          label: "Sweep",
+          detail: "Clear anything left unprocessed in the inbox this week.",
+        },
+        {
+          id: "review",
+          label: "Review",
+          detail:
+            "Scan active project notes — anything stalled, anything missing a next action?",
+        },
+        {
+          id: "purge",
+          label: "Purge",
+          detail:
+            "LinkedIn saves, browser bookmarks, starred email — oldest first. Each one: use it, file it, or delete it.",
+        },
+      ],
+    },
+  ],
+  snippetField: "steps",
+  successField: "steps",
+};
+
+/** Builds the live 5-moment workday array, swapping in the Friday
+ *  Inbox variant when applicable. WORKDAY_MOMENTS itself stays a
+ *  plain 4-item array so nothing else has to know about the swap. */
+function getWorkdayMoments() {
+  const inbox = new Date().getDay() === 5 ? WD_INBOX_FRIDAY : WD_INBOX_WEEKDAY;
+  return [
+    WORKDAY_MOMENTS[0],
+    WORKDAY_MOMENTS[1],
+    WORKDAY_MOMENTS[2],
+    inbox,
+    WORKDAY_MOMENTS[3],
+  ];
+}
+
 const NONWORK_MOMENTS = [
   {
     id: "nw-morning",
@@ -329,7 +428,7 @@ function setDayType(type) {
   appState.dayType = type;
   saveState();
   updateDayTypeUI();
-  const moments = type === "workday" ? WORKDAY_MOMENTS : NONWORK_MOMENTS;
+  const moments = type === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
   document.getElementById("cardContainer").innerHTML = moments
     .map((m) => renderCard(m))
     .join("");
@@ -347,11 +446,12 @@ function updateDayTypeUI() {
 }
 function detectCurrentMoment(moments) {
   const h = new Date().getHours();
-  if (moments.length === 4) {
+  if (moments.length === 5) {
     if (h >= 5 && h < 11) return moments[0].id;
     if (h >= 11 && h < 14) return moments[1].id;
-    if (h >= 14 && h < 20) return moments[2].id;
-    return moments[3].id;
+    if (h >= 14 && h < 19) return moments[2].id;
+    if (h >= 19 && h < 21) return moments[3].id;
+    return moments[4].id;
   } else {
     if (h >= 5 && h < 12) return moments[0].id;
     if (h >= 12 && h < 19) return moments[1].id;
@@ -386,6 +486,21 @@ function renderCard(m) {
       : "";
   const fieldsHTML = m.fields
     .map((f) => {
+      if (f.type === "checklist") {
+        const itemsHTML = f.items
+          .map(
+            (it) => `
+<div class="checklist-item" data-item="${it.id}">
+  <input type="checkbox" class="checklist-check" id="f-${m.id}-${it.id}" aria-label="${esc(it.label)}">
+  <div>
+    <label class="checklist-label" for="f-${m.id}-${it.id}">${esc(it.label)}</label>
+    <div class="checklist-detail">${esc(it.detail)}</div>
+  </div>
+</div>`,
+          )
+          .join("");
+        return `<div class="checklist" id="f-${f.id}">${itemsHTML}</div>`;
+      }
       const cls = f.highlight
         ? " highlight-input"
         : f.word
@@ -398,6 +513,9 @@ function renderCard(m) {
       return `<div class="prompt-block"><div class="prompt-q">${f.label}</div>${el}</div>`;
     })
     .join("");
+  const footnoteHTML = m.footnote
+    ? `<div class="card-footnote"><span class="dot"></span><p>${m.footnote}</p></div>`
+    : "";
 
   return `
 <div class="card" id="card-${m.id}" style="display:none">
@@ -410,6 +528,7 @@ function renderCard(m) {
 </div>
 ${anchorHTML}
 <div class="prompts" id="prompts-${m.id}">${fieldsHTML}</div>
+${footnoteHTML}
 <div class="success-state" id="success-${m.id}">
   <div class="success-glyph" style="color:${m.accent}">${m.glyph}</div>
   <div class="success-text" id="success-text-${m.id}"></div>
@@ -429,7 +548,7 @@ ${anchorHTML}
 function switchMoment(id, moments) {
   if (!moments)
     moments =
-      detectDayType() === "workday" ? WORKDAY_MOMENTS : NONWORK_MOMENTS;
+      detectDayType() === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
   currentMoment = id;
   moments.forEach((m) => {
     const c = document.getElementById("card-" + m.id);
@@ -451,12 +570,27 @@ function switchMoment(id, moments) {
 /* ── SUBMIT ── */
 function submitMoment(id) {
   const moments =
-    detectDayType() === "workday" ? WORKDAY_MOMENTS : NONWORK_MOMENTS;
+    detectDayType() === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
   const m = moments.find((x) => x.id === id);
   if (!m) return;
   const data = {};
   let valid = true;
   m.fields.forEach((f) => {
+    if (f.type === "checklist") {
+      const checked = f.items.filter(
+        (it) => document.getElementById(`f-${m.id}-${it.id}`)?.checked,
+      );
+      data[f.id] = checked.map((it) => it.label).join(" → ");
+      if (f.required && checked.length < f.items.length) {
+        const firstUnchecked = f.items.find(
+          (it) => !document.getElementById(`f-${m.id}-${it.id}`)?.checked,
+        );
+        firstUnchecked &&
+          document.getElementById(`f-${m.id}-${firstUnchecked.id}`)?.focus();
+        valid = false;
+      }
+      return;
+    }
     const el = document.getElementById("f-" + f.id);
     if (el) {
       data[f.id] = el.value.trim();
@@ -503,7 +637,12 @@ function renderLog() {
       '<div class="log-empty">No entries yet. Complete a ritual to begin.</div>';
     return;
   }
-  const allMoments = [...WORKDAY_MOMENTS, ...NONWORK_MOMENTS];
+  const allMoments = [
+    ...WORKDAY_MOMENTS,
+    WD_INBOX_WEEKDAY,
+    WD_INBOX_FRIDAY,
+    ...NONWORK_MOMENTS,
+  ];
   list.innerHTML = appState.log
     .map((e, i) => {
       const m = allMoments.find((x) => x.id === e.id);
@@ -581,7 +720,7 @@ function init() {
         ? "nonwork"
         : "workday";
     const moments =
-      autoType === "workday" ? WORKDAY_MOMENTS : NONWORK_MOMENTS;
+      autoType === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
     document
       .getElementById("btn-workday")
       .classList.toggle("active", autoType === "workday");
@@ -596,7 +735,7 @@ function init() {
   } else {
     updateDayTypeUI();
     const moments =
-      detectDayType() === "workday" ? WORKDAY_MOMENTS : NONWORK_MOMENTS;
+      detectDayType() === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
     document.getElementById("cardContainer").innerHTML = moments
       .map((m) => renderCard(m))
       .join("");
