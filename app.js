@@ -810,8 +810,10 @@ function giteaApiUrl(cfg) {
 }
 
 async function giteaGet(cfg) {
-  const res = await fetch(giteaApiUrl(cfg) + `?ref=${SYNC_BRANCH}`, {
+  const url = giteaApiUrl(cfg) + `?ref=${SYNC_BRANCH}&_=${Date.now()}`;
+  const res = await fetch(url, {
     headers: { Authorization: `token ${cfg.token}` },
+    cache: "no-store",
   });
   if (res.status === 404) return null;          // file doesn't exist yet
   if (!res.ok) throw new Error(`Gitea GET ${res.status}: ${await res.text()}`);
@@ -857,6 +859,7 @@ async function giteaPut(cfg, content, sha) {
     message: `ritual sync ${new Date().toISOString()}`,
     content: toBase64(content),
     branch: SYNC_BRANCH,
+    new_branch: SYNC_BRANCH,
   };
   if (sha) body.sha = sha;
   const res = await fetch(giteaApiUrl(cfg), {
@@ -867,7 +870,12 @@ async function giteaPut(cfg, content, sha) {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Gitea PUT ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const errText = await res.text();
+    // Show full details including what we sent
+    const sentSha = sha ? sha.slice(0,8) : "none";
+    throw new Error(`PUT ${res.status} (sha:${sentSha}): ${errText}`);
+  }
   return res.json();
 }
 
