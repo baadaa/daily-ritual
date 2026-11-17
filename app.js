@@ -823,6 +823,27 @@ async function giteaGet(cfg) {
   return data;
 }
 
+async function giteaInitRepo(cfg) {
+  // Create an initial commit on main so the branch exists before we write to it
+  const res = await fetch(`${cfg.url}/api/v1/repos/${cfg.repo}/contents/.gitkeep`, {
+    method: "PUT",
+    headers: {
+      Authorization: `token ${cfg.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: "init",
+      content: btoa(""),
+      branch: SYNC_BRANCH,
+      new_branch: SYNC_BRANCH,
+    }),
+  });
+  // 201 = created, 422 = already exists (branch appeared) — both are fine
+  if (!res.ok && res.status !== 422) {
+    throw new Error(`Gitea init ${res.status}: ${await res.text()}`);
+  }
+}
+
 async function giteaPut(cfg, content, sha) {
   const body = {
     message: `ritual sync ${new Date().toISOString()}`,
@@ -838,6 +859,25 @@ async function giteaPut(cfg, content, sha) {
     },
     body: JSON.stringify(body),
   });
+  // If branch doesn't exist yet (empty repo), initialise it and retry once
+  if (res.status === 422) {
+    const errText = await res.text();
+    if (errText.includes("SHA") || errText.includes("branch") || errText.includes("empty")) {
+      await giteaInitRepo(cfg);
+      // Retry the PUT — branch now exists, still no sha needed
+      const retry = await fetch(giteaApiUrl(cfg), {
+        method: "PUT",
+        headers: {
+          Authorization: `token ${cfg.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!retry.ok) throw new Error(`Gitea PUT ${retry.status}: ${await retry.text()}`);
+      return retry.json();
+    }
+    throw new Error(`Gitea PUT 422: ${errText}`);
+  }
   if (!res.ok) throw new Error(`Gitea PUT ${res.status}: ${await res.text()}`);
   return res.json();
 }
