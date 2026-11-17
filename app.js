@@ -844,10 +844,18 @@ async function giteaInitRepo(cfg) {
   }
 }
 
+function toBase64(str) {
+  // Safe Unicode base64 encoding — works on iOS Safari for any characters
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary);
+}
+
 async function giteaPut(cfg, content, sha) {
   const body = {
     message: `ritual sync ${new Date().toISOString()}`,
-    content: btoa(unescape(encodeURIComponent(content))),
+    content: toBase64(content),
     branch: SYNC_BRANCH,
   };
   if (sha) body.sha = sha;
@@ -902,7 +910,11 @@ async function syncPull() {
     }
     const rawContent = (file.content || "").replace(/\s/g, "");
     if (!rawContent) throw new Error("Remote file is empty — push first.");
-    const remoteState = JSON.parse(decodeURIComponent(escape(atob(rawContent))));
+    // Decode base64 → Uint8Array → UTF-8 string (safe for all Unicode)
+    const binary = atob(rawContent);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const remoteState = JSON.parse(new TextDecoder().decode(bytes));
     appState = mergeStates(appState, remoteState);
     saveState();
     // Re-render with merged state
@@ -926,13 +938,6 @@ async function syncPush() {
   }
   setSyncStatus("Pushing…", "info");
   try {
-    // Debug: show raw GET response shape
-    const rawRes = await fetch(giteaApiUrl(cfg) + `?ref=${SYNC_BRANCH}`, {
-      headers: { Authorization: `token ${cfg.token}` },
-    });
-    const rawText = await rawRes.text();
-    setSyncStatus(`GET ${rawRes.status}: ${rawText.slice(0, 200)}`, "info");
-    await new Promise(r => setTimeout(r, 8000)); // pause 8s so you can read it
     const existing = await giteaGet(cfg);
     const sha = existing ? existing.sha : undefined;
     await giteaPut(cfg, JSON.stringify(appState, null, 2), sha);
