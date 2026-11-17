@@ -815,7 +815,12 @@ async function giteaGet(cfg) {
   });
   if (res.status === 404) return null;          // file doesn't exist yet
   if (!res.ok) throw new Error(`Gitea GET ${res.status}: ${await res.text()}`);
-  return res.json();
+  const data = await res.json();
+  // Empty repo: Gitea returns [] instead of 404 when the branch doesn't exist yet
+  if (Array.isArray(data)) return null;
+  // Ensure the response has a sha field (top-level on a file object)
+  if (!data || typeof data !== "object" || !data.sha) return null;
+  return data;
 }
 
 async function giteaPut(cfg, content, sha) {
@@ -874,7 +879,9 @@ async function syncPull() {
       setSyncStatus("No remote state found — push first to create it.", "info");
       return;
     }
-    const remoteState = JSON.parse(decodeURIComponent(escape(atob(file.content.replace(/\n/g, "")))));
+    const rawContent = (file.content || "").replace(/\s/g, "");
+    if (!rawContent) throw new Error("Remote file is empty — push first.");
+    const remoteState = JSON.parse(decodeURIComponent(escape(atob(rawContent))));
     appState = mergeStates(appState, remoteState);
     saveState();
     // Re-render with merged state
