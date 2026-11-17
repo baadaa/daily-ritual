@@ -859,25 +859,6 @@ async function giteaPut(cfg, content, sha) {
     },
     body: JSON.stringify(body),
   });
-  // If branch doesn't exist yet (empty repo), initialise it and retry once
-  if (res.status === 422) {
-    const errText = await res.text();
-    if (errText.includes("SHA") || errText.includes("branch") || errText.includes("empty")) {
-      await giteaInitRepo(cfg);
-      // Retry the PUT — branch now exists, still no sha needed
-      const retry = await fetch(giteaApiUrl(cfg), {
-        method: "PUT",
-        headers: {
-          Authorization: `token ${cfg.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      if (!retry.ok) throw new Error(`Gitea PUT ${retry.status}: ${await retry.text()}`);
-      return retry.json();
-    }
-    throw new Error(`Gitea PUT 422: ${errText}`);
-  }
   if (!res.ok) throw new Error(`Gitea PUT ${res.status}: ${await res.text()}`);
   return res.json();
 }
@@ -945,6 +926,13 @@ async function syncPush() {
   }
   setSyncStatus("Pushing…", "info");
   try {
+    // Debug: show raw GET response shape
+    const rawRes = await fetch(giteaApiUrl(cfg) + `?ref=${SYNC_BRANCH}`, {
+      headers: { Authorization: `token ${cfg.token}` },
+    });
+    const rawText = await rawRes.text();
+    setSyncStatus(`GET ${rawRes.status}: ${rawText.slice(0, 200)}`, "info");
+    await new Promise(r => setTimeout(r, 8000)); // pause 8s so you can read it
     const existing = await giteaGet(cfg);
     const sha = existing ? existing.sha : undefined;
     await giteaPut(cfg, JSON.stringify(appState, null, 2), sha);
