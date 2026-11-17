@@ -755,10 +755,11 @@ textarea { min-height: 6.8rem; }
 
 /* ── MOBILE ── */
 @media (max-width: 480px) {
-  .app-title { font-size: 2.6rem; }
   .card-header, .prompts, .card-footer { padding-left: 1.8rem; padding-right: 1.8rem; }
   .seed-bar { padding-left: 1.8rem; padding-right: 1.8rem; }
-  .header-controls { flex-wrap: wrap; }
+  .header-controls { flex-wrap: wrap; margin-left: auto; }
+  .header-top { flex-direction: column-reverse; }
+
 }
 
 footer {
