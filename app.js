@@ -825,27 +825,6 @@ async function giteaGet(cfg) {
   return data;
 }
 
-async function giteaInitRepo(cfg) {
-  // Create an initial commit on main so the branch exists before we write to it
-  const res = await fetch(`${cfg.url}/api/v1/repos/${cfg.repo}/contents/.gitkeep`, {
-    method: "PUT",
-    headers: {
-      Authorization: `token ${cfg.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      message: "init",
-      content: btoa(""),
-      branch: SYNC_BRANCH,
-      new_branch: SYNC_BRANCH,
-    }),
-  });
-  // 201 = created, 422 = already exists (branch appeared) — both are fine
-  if (!res.ok && res.status !== 422) {
-    throw new Error(`Gitea init ${res.status}: ${await res.text()}`);
-  }
-}
-
 function toBase64(str) {
   // Safe Unicode base64 encoding — works on iOS Safari for any characters
   const bytes = new TextEncoder().encode(str);
@@ -859,11 +838,11 @@ async function giteaPut(cfg, content, sha) {
     message: `ritual sync ${new Date().toISOString()}`,
     content: toBase64(content),
     branch: SYNC_BRANCH,
-    new_branch: SYNC_BRANCH,
   };
   if (sha) body.sha = sha;
+  // Gitea Contents API: POST creates a new file, PUT updates an existing one (sha required)
   const res = await fetch(giteaApiUrl(cfg), {
-    method: "PUT",
+    method: sha ? "PUT" : "POST",
     headers: {
       Authorization: `token ${cfg.token}`,
       "Content-Type": "application/json",
