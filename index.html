@@ -43,9 +43,90 @@
             onclick="toggleTheme()"
             title="Toggle theme"
           ></button>
+          <button
+            class="sync-toggle"
+            id="syncBtn"
+            onclick="toggleSyncPanel()"
+            title="Sync settings"
+          >
+            ⇅
+          </button>
         </div>
       </div>
     </header>
+
+    <!-- SYNC PANEL -->
+    <div class="sync-panel" id="syncPanel">
+      <div class="sync-panel-inner">
+        <div class="sync-section">
+          <div class="sync-section-title">Gitea sync</div>
+          <div class="sync-field">
+            <label for="syncUrl">Gitea base URL</label>
+            <input
+              type="text"
+              id="syncUrl"
+              placeholder="https://git.example.com"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="sync-field">
+            <label for="syncRepo">Repository (owner/repo)</label>
+            <input
+              type="text"
+              id="syncRepo"
+              placeholder="yourname/ritual-sync"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="sync-field">
+            <label for="syncToken">Personal access token</label>
+            <input
+              type="password"
+              id="syncToken"
+              placeholder="Stored locally, never sent anywhere else"
+              autocomplete="off"
+            />
+          </div>
+          <label class="sync-autosync">
+            <input type="checkbox" id="syncAutoLoad" />
+            <span>Pull automatically when the app opens</span>
+          </label>
+          <div class="sync-actions">
+            <button class="btn-sync-action" onclick="syncPull()">↓ Pull</button>
+            <button class="btn-sync-action" onclick="syncPush()">↑ Push</button>
+            <button class="btn-sync-save" onclick="saveSyncConfig()">
+              Save config
+            </button>
+          </div>
+          <div class="sync-status" id="syncStatus"></div>
+        </div>
+        <div class="sync-divider"></div>
+        <div class="sync-section">
+          <div class="sync-section-title">Backup</div>
+          <div class="sync-actions">
+            <button class="btn-sync-action" onclick="exportState()">
+              ↓ Export JSON
+            </button>
+            <label class="btn-sync-action btn-import-label">
+              ↑ Import JSON
+              <input
+                type="file"
+                id="importFile"
+                accept=".json,application/json"
+                onchange="importState(event)"
+                style="display: none"
+              />
+            </label>
+          </div>
+          <div class="sync-hint">
+            Export downloads a <code>ritual-backup.json</code> file. Import
+            merges entries — newer timestamps win.
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- MOMENT NAV -->
     <nav class="moment-nav" id="momentNav"></nav>

@@ -1,12 +1,12 @@
 # Daily Ritual
 
-A lightweight daily ritual app for structured reflection at four moments throughout the day. Personalized for [Bumhan Yu](mailto:bumhan.yu@gmail.com), built with Claude which helped draft this README as well.
+A lightweight daily ritual app for structured reflection across five moments throughout the day.
 
 ---
 
 ## What it is
 
-A static HTML/CSS/JS build: no framework, no backend, no dependencies beyond a Google Fonts import. It lives in a browser tab and prompts you through short, focused check-ins at the beginning, middle, and end of each day.
+A single HTML file — no framework, no backend, no dependencies beyond a Google Fonts import. It lives in a browser tab and prompts you through short, focused check-ins at the beginning, middle, and end of each day.
 
 It is not a task manager, a productivity dashboard, or a habit tracker. It is a container for intention.
 
@@ -14,7 +14,7 @@ It is not a task manager, a productivity dashboard, or a habit tracker. It is a 
 
 ## Why it exists
 
-Most daily planning systems fail at re-entry; not because the plan was wrong, but because there is no low-friction way back to it after an interruption. Daily Ritual is built around the idea that a single held intention is more resilient than a list of tasks, and that a 60-second re-orientation is more useful than a missed to-do.
+Most daily planning systems fail at re-entry — not because the plan was wrong, but because there is no low-friction way back to it after an interruption. Daily Ritual is built around the idea that a single held intention is more resilient than a list of tasks, and that a 60-second re-orientation is more useful than a missed to-do.
 
 The structure was designed around a specific pattern: a hybrid work schedule with fragmented days, a hard boundary between work and family time, and a preference for reflection over logging.
 
@@ -24,10 +24,10 @@ The structure was designed around a specific pattern: a hybrid work schedule wit
 
 **Two modes, one file**
 
-- **Work day** — four moments: Morning (orientation), Midday (re-entry), Work close (boundary), Day close (reflection)
+- **Work day** — five moments: Morning (orientation), Midday (re-entry), Work close (boundary), Inbox/Nightly clear (processing), Day close (reflection). The Inbox moment swaps to a Friday Purge variant at the end of the week.
 - **Day off** — three moments: Morning (intention), Midday (presence), Evening (reflection)
 
-The active mode is auto-detected from the day of the week and can be manually overridden with a toggle in the header, which is useful for holidays, PTOs, and office closures.
+The active mode is auto-detected from the day of the week and can be manually overridden with a toggle in the header — useful for holidays, PTOs, and office closures.
 
 **Anchor sentence**
 
@@ -45,24 +45,34 @@ All entries across both modes are stored in a single chronological log. Each ent
 
 **Theme**
 
-Follows system light/dark preference automatically. A manual toggle in the header overrides it per session, persisted to `localStorage`.
+Follows system light/dark preference automatically. A manual toggle in the header overrides it per session, persisted to localStorage.
+
+**Sync**
+
+Optional cross-device sync via a self-hosted Gitea repository. A `⇅` button in the header opens the sync panel, where you enter your Gitea base URL, repository path (`owner/repo`), and a personal access token (repository read/write scope). Config is stored in localStorage and never sent anywhere except your own server.
+
+- **Pull** — fetches `state.json` from the remote, merges entries with local state (deduplicates by timestamp, newer wins), and re-renders
+- **Push** — writes current state to `state.json` on the remote; creates the file on first push
+- **Auto-sync on load** — a checkbox in the sync panel; when enabled, the app pulls automatically every time it opens. Enable on each device once config is saved.
+- **Export / Import** — backup and restore via a dated JSON file; import also merges rather than overwrites
+
+Pull before you push when both devices have made entries offline, to avoid overwriting the remote with a partial state.
 
 **What it does not do**
 
-- No accounts, no sync, no cloud storage: data lives in the browser's localStorage on whichever device you use it on
-- No AI or external API calls: fully self-contained, works offline, hostable anywhere as a static file
-- No notifications: reminders are handled separately via the OS (e.g. Apple Reminders, set to fire at each anchor time)
-- No cross-device persistence: pick one primary device
+- No accounts, no login — sync is entirely via your own Gitea token, stored locally
+- No AI or external API calls — fully self-contained, works offline (except during a sync), hostable anywhere as a static file
+- No notifications — reminders are handled separately via the OS (e.g. Apple Reminders, set to fire at each anchor time)
 
 ---
 
 ## How it's built
 
-A single `.html` file with vanilla HTML, CSS, and JavaScript. No build step, no bundler, no runtime dependencies. Visual aesthetics follow Bumhan Yu's personal branding as exemplified in [bald.design](https://bald.design/).
+Three files — `index.html`, `app.js`, `styles.css` — with vanilla HTML, CSS, and JavaScript. No build step, no bundler, no runtime dependencies.
 
-**Fonts** — [Work Sans](https://fonts.google.com/specimen/Work+Sans) (sans serif, for prompts and UI chrome / loaded via Google Fonts) and [Georgia](<https://en.wikipedia.org/wiki/Georgia_(typeface)>) (serif, for responses and logs / loaded as system font).
+**Fonts** — [Work Sans](https://fonts.google.com/specimen/Work+Sans) (UI chrome) and Georgia (prompts and responses) loaded via Google Fonts.
 
-**Storage** — `localStorage` with a single key (`b_ritual`). State is a JSON object holding the log array, today's anchor sentence, tomorrow's seed, theme preference, and day type override.
+**Storage** — `localStorage` with two keys: `b_ritual` for app state (log, anchor sentence, tomorrow's seed, theme, day type) and `b_ritual_sync` for Gitea sync config (URL, repo, token, auto-sync preference).
 
 **Theme** — CSS custom properties for the full token set, toggled via a `data-theme` attribute on the root element. System preference is read via `window.matchMedia('(prefers-color-scheme: dark)')` with a live event listener.
 
@@ -87,6 +97,19 @@ Weekend reminders (if used) follow the same pattern at 9:00am, 1:00pm, and 9:30p
 
 ---
 
+## Reminders (Gitea sync setup)
+
+To use sync, you need a Gitea instance and a private repository:
+
+1. Create a new private repo (e.g. `yourname/ritual-sync`) — it can be empty
+2. Go to **your user Settings → Applications → Generate New Token**; grant **repository** (read + write) scope
+3. In the app, open the `⇅` panel, fill in the base URL, repo path, and token, then click **Save config**
+4. Click **↑ Push** to create the initial `state.json`
+5. On each additional device, repeat steps 3–4 (Save config, then **↓ Pull**)
+6. Enable **Pull automatically when the app opens** on each device for hands-free sync
+
+---
+
 ## Hosting
 
-Drop the HTML/CSS/JS files in a single foldewr anywhere that serves static files: GitLab Pages, GitHub Pages, Netlify, or a local file path. No server-side configuration required.
+Drop `index.html`, `app.js`, and `styles.css` anywhere that serves static files — GitHub Pages, Netlify, Coolify, or a local file path. No server-side configuration required.

@@ -743,4 +743,206 @@ function init() {
     switchMoment(detectCurrentMoment(moments), moments);
   }
   renderLog();
+  loadSyncConfig();
+  // Auto-sync on load if configured
+  try {
+    const cfg = JSON.parse(localStorage.getItem(SYNC_KEY)) || {};
+    if (cfg.autoSync && cfg.url && cfg.repo && cfg.token) syncPull();
+  } catch { /* ignore */ }
+}
+
+/* ════════════════════════════════════════════════
+   SYNC — Gitea REST API + export/import backup
+   ════════════════════════════════════════════════ */
+
+const SYNC_KEY = "b_ritual_sync";
+const SYNC_FILE = "state.json";
+const SYNC_BRANCH = "main";
+
+/* ── Config persistence ── */
+function loadSyncConfig() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem(SYNC_KEY)) || {};
+    if (cfg.url)   document.getElementById("syncUrl").value   = cfg.url;
+    if (cfg.repo)  document.getElementById("syncRepo").value  = cfg.repo;
+    if (cfg.token) document.getElementById("syncToken").value = cfg.token;
+    document.getElementById("syncAutoLoad").checked = !!cfg.autoSync;
+  } catch { /* ignore */ }
+}
+
+function saveSyncConfig() {
+  const cfg = {
+    url:      document.getElementById("syncUrl").value.trim().replace(/\/$/, ""),
+    repo:     document.getElementById("syncRepo").value.trim(),
+    token:    document.getElementById("syncToken").value.trim(),
+    autoSync: document.getElementById("syncAutoLoad").checked,
+  };
+  localStorage.setItem(SYNC_KEY, JSON.stringify(cfg));
+  setSyncStatus("Config saved.", "ok");
+}
+
+function getSyncConfig() {
+  try {
+    return JSON.parse(localStorage.getItem(SYNC_KEY)) || {};
+  } catch { return {}; }
+}
+
+/* ── Panel toggle ── */
+function toggleSyncPanel() {
+  const panel = document.getElementById("syncPanel");
+  const isOpen = panel.classList.toggle("open");
+  document.getElementById("syncBtn").classList.toggle("active", isOpen);
+}
+
+/* ── Status helper ── */
+function setSyncStatus(msg, type) {
+  const el = document.getElementById("syncStatus");
+  el.textContent = msg;
+  el.className = "sync-status " + (type || "");
+  if (type === "ok" || type === "info") {
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, 4000);
+  }
+}
+
+/* ── Gitea API helpers ── */
+function giteaApiUrl(cfg) {
+  return `${cfg.url}/api/v1/repos/${cfg.repo}/contents/${SYNC_FILE}`;
+}
+
+async function giteaGet(cfg) {
+  const res = await fetch(giteaApiUrl(cfg) + `?ref=${SYNC_BRANCH}`, {
+    headers: { Authorization: `token ${cfg.token}` },
+  });
+  if (res.status === 404) return null;          // file doesn't exist yet
+  if (!res.ok) throw new Error(`Gitea GET ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function giteaPut(cfg, content, sha) {
+  const body = {
+    message: `ritual sync ${new Date().toISOString()}`,
+    content: btoa(unescape(encodeURIComponent(content))),
+    branch: SYNC_BRANCH,
+  };
+  if (sha) body.sha = sha;
+  const res = await fetch(giteaApiUrl(cfg), {
+    method: "PUT",
+    headers: {
+      Authorization: `token ${cfg.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Gitea PUT ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+/* ── Merge logic: deduplicate by timestamp, newer wins ── */
+function mergeStates(local, remote) {
+  const byTs = {};
+  [...(remote.log || []), ...(local.log || [])].forEach(e => {
+    const ts = e.timestamp;
+    if (!byTs[ts] || new Date(e.timestamp) > new Date(byTs[ts].timestamp)) {
+      byTs[ts] = e;
+    }
+  });
+  const merged = Object.values(byTs).sort(
+    (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+  );
+  // local wins for scalar state (theme, dayType, sentence, seed)
+  return {
+    ...remote,
+    log: merged,
+    theme:         local.theme         || remote.theme,
+    dayType:       local.dayType       || remote.dayType,
+    todaySentence: local.todaySentence || remote.todaySentence,
+    tomorrowSeed:  local.tomorrowSeed  || remote.tomorrowSeed,
+  };
+}
+
+/* ── Pull ── */
+async function syncPull() {
+  const cfg = getSyncConfig();
+  if (!cfg.url || !cfg.repo || !cfg.token) {
+    setSyncStatus("Fill in Gitea URL, repo, and token first.", "error");
+    return;
+  }
+  setSyncStatus("Pulling…", "info");
+  try {
+    const file = await giteaGet(cfg);
+    if (!file) {
+      setSyncStatus("No remote state found — push first to create it.", "info");
+      return;
+    }
+    const remoteState = JSON.parse(decodeURIComponent(escape(atob(file.content.replace(/\n/g, "")))));
+    appState = mergeStates(appState, remoteState);
+    saveState();
+    // Re-render with merged state
+    const moments = detectDayType() === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
+    document.getElementById("cardContainer").innerHTML = moments.map(m => renderCard(m)).join("");
+    renderNav(moments);
+    switchMoment(detectCurrentMoment(moments), moments);
+    renderLog();
+    setSyncStatus(`Pulled · ${appState.log.length} entries`, "ok");
+  } catch (e) {
+    setSyncStatus("Pull failed: " + e.message, "error");
+  }
+}
+
+/* ── Push ── */
+async function syncPush() {
+  const cfg = getSyncConfig();
+  if (!cfg.url || !cfg.repo || !cfg.token) {
+    setSyncStatus("Fill in Gitea URL, repo, and token first.", "error");
+    return;
+  }
+  setSyncStatus("Pushing…", "info");
+  try {
+    const existing = await giteaGet(cfg);
+    const sha = existing ? existing.sha : undefined;
+    await giteaPut(cfg, JSON.stringify(appState, null, 2), sha);
+    setSyncStatus(`Pushed · ${appState.log.length} entries`, "ok");
+  } catch (e) {
+    setSyncStatus("Push failed: " + e.message, "error");
+  }
+}
+
+/* ── Export ── */
+function exportState() {
+  const json = JSON.stringify(appState, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `ritual-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ── Import ── */
+function importState(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!Array.isArray(imported.log)) throw new Error("Invalid backup file.");
+      appState = mergeStates(appState, imported);
+      saveState();
+      const moments = detectDayType() === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
+      document.getElementById("cardContainer").innerHTML = moments.map(m => renderCard(m)).join("");
+      renderNav(moments);
+      switchMoment(detectCurrentMoment(moments), moments);
+      renderLog();
+      setSyncStatus(`Imported · ${appState.log.length} entries total`, "ok");
+    } catch (err) {
+      setSyncStatus("Import failed: " + err.message, "error");
+    }
+    // reset input so same file can be re-imported
+    event.target.value = "";
+  };
+  reader.readAsText(file);
 }
