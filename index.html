@@ -119,10 +119,30 @@
                 style="display: none"
               />
             </label>
+            <button class="btn-sync-action" onclick="copyState()">
+              ⧉ Copy JSON
+            </button>
+          </div>
+          <div class="sync-field">
+            <label for="pasteBox">Paste JSON</label>
+            <textarea
+              id="pasteBox"
+              rows="3"
+              placeholder="Paste a state.json or backup here, then Import pasted"
+              autocomplete="off"
+              spellcheck="false"
+            ></textarea>
+          </div>
+          <div class="sync-actions">
+            <button class="btn-sync-action" onclick="importPasted()">
+              ↑ Import pasted
+            </button>
           </div>
           <div class="sync-hint">
-            Export downloads a <code>ritual-backup.json</code> file. Import
-            merges entries — newer timestamps win.
+            Export downloads a <code>ritual-backup-YYYY-MM-DD.json</code> file;
+            Copy JSON puts the same content on the clipboard. Import and paste
+            both merge entries — newer timestamps win. Deleted entries can
+            reappear after a merge.
           </div>
         </div>
       </div>

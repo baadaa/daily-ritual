@@ -31,7 +31,7 @@ The active mode is auto-detected from the day of the week and can be manually ov
 
 **Anchor sentence**
 
-The morning work day prompt produces a single sentence: *Today is a success if \_\_\_.* This sentence carries forward automatically into every subsequent moment as a visible anchor, replacing the need to re-read a plan.
+The morning work day prompt produces a single sentence: _Today is a success if \_\_\_._ This sentence carries forward automatically into every subsequent moment as a visible anchor, replacing the need to re-read a plan.
 
 **Re-orientation mechanics**
 
@@ -52,11 +52,14 @@ Follows system light/dark preference automatically. A manual toggle in the heade
 Optional cross-device sync via a self-hosted Gitea repository. A `⇅` button in the header opens the sync panel, where you enter your Gitea base URL, repository path (`owner/repo`), and a personal access token (repository read/write scope). Config is stored in localStorage and never sent anywhere except your own server.
 
 - **Pull** — fetches `state.json` from the remote, merges entries with local state (deduplicates by timestamp, newer wins), and re-renders
-- **Push** — writes current state to `state.json` on the remote; creates the file on first push
+- **Push** — merges the remote `state.json` into local state first, then writes the result back, so a push can't overwrite entries another device (or a manual upload) added since your last pull. Creates the file on first push. If the remote file is unreadable or isn't a Ritual state file, the push aborts instead of overwriting it.
 - **Auto-sync on load** — a checkbox in the sync panel; when enabled, the app pulls automatically every time it opens. Enable on each device once config is saved.
-- **Export / Import** — backup and restore via a dated JSON file; import also merges rather than overwrites
+- **Export / Import** — backup and restore via a dated JSON file (`ritual-backup-YYYY-MM-DD.json`); import also merges rather than overwrites
+- **Copy JSON / Paste JSON** — the same content as Export, via the clipboard: **Copy JSON** copies the full state, and pasting JSON into the **Paste JSON** box and clicking **Import pasted** merges it. Handy where files are awkward.
 
-Pull before you push when both devices have made entries offline, to avoid overwriting the remote with a partial state.
+`state.json` and the exported backup have the same structure (the full app state, pretty-printed), so either can be fed to Import or Paste. The merge is a union by timestamp, which means **deleting an entry on one device doesn't propagate** — it can reappear after the next merge from a device that still has it.
+
+**Manual sync for devices that can't reach Gitea from the app** (e.g. a managed work laptop behind a TLS-inspecting proxy — see Troubleshooting): open `state.json` in the Gitea web UI and use its Raw view, then paste it into **Paste JSON** and **Import pasted** (or download it and use **Import JSON**). To send changes back, **Copy JSON** in the app, then in Gitea open `state.json` → Edit, replace the contents and commit. Always import before you upload, so the uploaded state includes everything that was already on the remote; the other devices' next Pull or Push will merge it.
 
 **What it does not do**
 
@@ -86,12 +89,12 @@ Three files — `index.html`, `app.js`, `styles.css` — with vanilla HTML, CSS,
 
 Ritual doesn't manage its own notifications. The intended setup is four recurring weekday reminders in the OS pointing to wherever the file is hosted or bookmarked:
 
-| Time | Moment |
-|---|---|
-| 9:00am | Morning — open Ritual |
-| 12:30pm | Midday — re-read your sentence |
-| 5:15pm | Work close — park it in one word |
-| 9:45pm | Day close — reflect and plant tomorrow's seed |
+| Time    | Moment                                        |
+| ------- | --------------------------------------------- |
+| 9:00am  | Morning — open Ritual                         |
+| 12:30pm | Midday — re-read your sentence                |
+| 5:15pm  | Work close — park it in one word              |
+| 9:45pm  | Day close — reflect and plant tomorrow's seed |
 
 Weekend reminders (if used) follow the same pattern at 9:00am, 1:00pm, and 9:30pm.
 
@@ -102,7 +105,7 @@ Weekend reminders (if used) follow the same pattern at 9:00am, 1:00pm, and 9:30p
 To use sync, you need a Gitea instance and a private repository:
 
 1. Create a new private repo (e.g. `yourname/ritual-sync`) **with an initial commit** — tick "Initialize repository" or add a `README.md`. The setup was only tested against a repo that already had a commit; a completely empty repo (no branch) is untested.
-2. Go to **your user Settings → Applications → Generate New Token** (the *user* settings, not the repo's Settings page); grant **repository** read + write scope
+2. Go to **your user Settings → Applications → Generate New Token** (the _user_ settings, not the repo's Settings page); grant **repository** read + write scope
 3. Allow the app's origin through CORS (see below) — the browser calls the Gitea API directly, so this is required
 4. In the app, open the `⇅` panel, fill in the base URL, repo path, and token, then click **Save config**
 5. Click **↑ Push** to create `state.json`
@@ -115,12 +118,12 @@ The app runs on one origin (e.g. `https://ritual.example.com`) and calls Gitea o
 
 **Option A — Cloudflare response header rule (verified working).** If Gitea sits behind Cloudflare, add a Response Header Transform Rule (Rules → Transform Rules → Modify Response Header → "Add static header to response") matching `http.host eq "git.example.com"` that adds:
 
-| Header | Value |
-|---|---|
-| `Access-Control-Allow-Origin` | `https://ritual.example.com` (the app's exact origin) |
-| `Access-Control-Allow-Methods` | `GET, POST, PUT, OPTIONS` |
-| `Access-Control-Allow-Headers` | `Authorization, Content-Type` |
-| `Access-Control-Allow-Credentials` | `true` |
+| Header                             | Value                                                 |
+| ---------------------------------- | ----------------------------------------------------- |
+| `Access-Control-Allow-Origin`      | `https://ritual.example.com` (the app's exact origin) |
+| `Access-Control-Allow-Methods`     | `GET, POST, PUT, OPTIONS`                             |
+| `Access-Control-Allow-Headers`     | `Authorization, Content-Type`                         |
+| `Access-Control-Allow-Credentials` | `true`                                                |
 
 `POST` is needed for the first push (creating the file) and `PUT` for every later update — see Troubleshooting.
 
@@ -139,13 +142,13 @@ curl -sS -D - -o /dev/null -X OPTIONS \
 
 ### Troubleshooting
 
-| What you see | Cause and fix |
-|---|---|
-| `Failed to fetch` / `Load failed`, or a console error "Origin … is not allowed by Access-Control-Allow-Origin" | The browser isn't receiving CORS headers. Run the `curl` check above. If it passes from your server but a particular device still fails, see the managed-network note below. |
-| Push fails with `422 {"message":"[SHA]: Required"}` | Gitea's Contents API uses **`POST` to create** a file and **`PUT` to update** one (`PUT` requires the file's current `sha`). Sending `PUT` for a file that doesn't exist yet produces this error. The app picks the method itself (`giteaPut` in `app.js`); keep that logic if you change it. |
-| Pull says "No remote state found — push first to create it" | Normal before the first push: `state.json` doesn't exist yet. Push from the device that has your entries. |
-| `401` / `403` | Token is wrong, expired, or lacks repository read + write scope. |
-| A fix was deployed but the old behaviour persists | The browser is running a cached `app.js`. Empty caches and hard-reload (`Cmd+Shift+R`). Check the request URL in the console: the current script appends `&_=<number>` to the GET. |
+| What you see                                                                                                   | Cause and fix                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Failed to fetch` / `Load failed`, or a console error "Origin … is not allowed by Access-Control-Allow-Origin" | The browser isn't receiving CORS headers. Run the `curl` check above. If it passes from your server but a particular device still fails, see the managed-network note below.                                                                                                                  |
+| Push fails with `422 {"message":"[SHA]: Required"}`                                                            | Gitea's Contents API uses **`POST` to create** a file and **`PUT` to update** one (`PUT` requires the file's current `sha`). Sending `PUT` for a file that doesn't exist yet produces this error. The app picks the method itself (`giteaPut` in `app.js`); keep that logic if you change it. |
+| Pull says "No remote state found — push first to create it"                                                    | Normal before the first push: `state.json` doesn't exist yet. Push from the device that has your entries.                                                                                                                                                                                     |
+| `401` / `403`                                                                                                  | Token is wrong, expired, or lacks repository read + write scope.                                                                                                                                                                                                                              |
+| A fix was deployed but the old behaviour persists                                                              | The browser is running a cached `app.js`. Empty caches and hard-reload (`Cmd+Shift+R`). Check the request URL in the console: the current script appends `&_=<number>` to the GET.                                                                                                            |
 
 **Managed work networks.** Corporate TLS-inspecting proxies (for example Palo Alto Prisma Access) can strip or rewrite response headers, including `Access-Control-*`. On such a network the headers never reach the browser even when the server sends them, and sync fails with the CORS error above. To confirm, run `curl -sv` against the Gitea URL from that machine and check whether the certificate issuer is a corporate CA and whether the `access-control-*` headers are missing. Sync from personal devices instead, or use **Export / Import JSON** on the managed machine.
 

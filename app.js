@@ -881,6 +881,47 @@ function mergeStates(local, remote) {
   };
 }
 
+/* ── Shared helpers for pull / push / import ── */
+function rerenderAll() {
+  const moments = detectDayType() === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
+  document.getElementById("cardContainer").innerHTML = moments.map(m => renderCard(m)).join("");
+  renderNav(moments);
+  switchMoment(detectCurrentMoment(moments), moments);
+  renderLog();
+}
+
+// Decode a Gitea Contents API file object → parsed, validated state object.
+function decodeRemoteFile(file) {
+  const rawContent = (file.content || "").replace(/\s/g, "");
+  if (!rawContent) throw new Error("Remote state.json is empty.");
+  // Decode base64 → Uint8Array → UTF-8 string (safe for all Unicode)
+  const binary = atob(rawContent);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  let state;
+  try {
+    state = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new Error("Remote state.json isn't valid JSON — fix or delete it in Gitea.");
+  }
+  if (!state || !Array.isArray(state.log)) {
+    throw new Error("Remote state.json isn't a Ritual state file (no log array).");
+  }
+  return state;
+}
+
+// Merge an incoming state into local state, save, and re-render.
+// With onlyIfChanged, skips the re-render when nothing changed so unsaved
+// text in an open card isn't wiped. Returns true if local state changed.
+function mergeIntoLocal(incoming, onlyIfChanged = false) {
+  const before = JSON.stringify(appState);
+  appState = mergeStates(appState, incoming);
+  const changed = JSON.stringify(appState) !== before;
+  if (changed) saveState();
+  if (changed || !onlyIfChanged) rerenderAll();
+  return changed;
+}
+
 /* ── Pull ── */
 async function syncPull() {
   const cfg = getSyncConfig();
@@ -895,21 +936,7 @@ async function syncPull() {
       setSyncStatus("No remote state found — push first to create it.", "info");
       return;
     }
-    const rawContent = (file.content || "").replace(/\s/g, "");
-    if (!rawContent) throw new Error("Remote file is empty — push first.");
-    // Decode base64 → Uint8Array → UTF-8 string (safe for all Unicode)
-    const binary = atob(rawContent);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const remoteState = JSON.parse(new TextDecoder().decode(bytes));
-    appState = mergeStates(appState, remoteState);
-    saveState();
-    // Re-render with merged state
-    const moments = detectDayType() === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
-    document.getElementById("cardContainer").innerHTML = moments.map(m => renderCard(m)).join("");
-    renderNav(moments);
-    switchMoment(detectCurrentMoment(moments), moments);
-    renderLog();
+    mergeIntoLocal(decodeRemoteFile(file));
     setSyncStatus(`Pulled · ${appState.log.length} entries`, "ok");
   } catch (e) {
     setSyncStatus("Pull failed: " + e.message, "error");
@@ -927,8 +954,18 @@ async function syncPush() {
   try {
     const existing = await giteaGet(cfg);
     const sha = existing ? existing.sha : undefined;
+    let note = "";
+    if (existing) {
+      // Merge the remote state in first so this push can't overwrite entries
+      // that another device (or a manual upload) added since our last pull.
+      // If the remote file is unreadable this throws and nothing is overwritten.
+      const before = appState.log.length;
+      mergeIntoLocal(decodeRemoteFile(existing), true);
+      const added = appState.log.length - before;
+      if (added > 0) note = ` (merged ${added} from remote)`;
+    }
     await giteaPut(cfg, JSON.stringify(appState, null, 2), sha);
-    setSyncStatus(`Pushed · ${appState.log.length} entries`, "ok");
+    setSyncStatus(`Pushed · ${appState.log.length} entries${note}`, "ok");
   } catch (e) {
     setSyncStatus("Push failed: " + e.message, "error");
   }
@@ -948,28 +985,62 @@ function exportState() {
   URL.revokeObjectURL(url);
 }
 
-/* ── Import ── */
+/* ── Copy to clipboard ── */
+async function copyState() {
+  const json = JSON.stringify(appState, null, 2);
+  try {
+    await navigator.clipboard.writeText(json);
+  } catch {
+    // Fallback for browsers/contexts where the async clipboard API is blocked
+    const ta = document.createElement("textarea");
+    ta.value = json;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { /* ignore */ }
+    document.body.removeChild(ta);
+    if (!ok) {
+      setSyncStatus("Copy blocked by the browser — use Export JSON instead.", "error");
+      return;
+    }
+  }
+  setSyncStatus(`Copied · ${appState.log.length} entries`, "ok");
+}
+
+/* ── Import (shared by file picker and paste box) ── */
+function importFromText(text, label) {
+  try {
+    const imported = JSON.parse(text);
+    if (!imported || !Array.isArray(imported.log)) throw new Error("Not a Ritual state/backup (no log array).");
+    mergeIntoLocal(imported);
+    setSyncStatus(`${label} · ${appState.log.length} entries total`, "ok");
+    return true;
+  } catch (err) {
+    setSyncStatus("Import failed: " + err.message, "error");
+    return false;
+  }
+}
+
 function importState(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (e) => {
-    try {
-      const imported = JSON.parse(e.target.result);
-      if (!Array.isArray(imported.log)) throw new Error("Invalid backup file.");
-      appState = mergeStates(appState, imported);
-      saveState();
-      const moments = detectDayType() === "workday" ? getWorkdayMoments() : NONWORK_MOMENTS;
-      document.getElementById("cardContainer").innerHTML = moments.map(m => renderCard(m)).join("");
-      renderNav(moments);
-      switchMoment(detectCurrentMoment(moments), moments);
-      renderLog();
-      setSyncStatus(`Imported · ${appState.log.length} entries total`, "ok");
-    } catch (err) {
-      setSyncStatus("Import failed: " + err.message, "error");
-    }
+    importFromText(e.target.result, "Imported");
     // reset input so same file can be re-imported
     event.target.value = "";
   };
   reader.readAsText(file);
+}
+
+function importPasted() {
+  const box = document.getElementById("pasteBox");
+  const text = box.value.trim();
+  if (!text) {
+    setSyncStatus("Paste the JSON into the box first.", "error");
+    return;
+  }
+  if (importFromText(text, "Imported from paste")) box.value = "";
 }

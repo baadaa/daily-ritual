@@ -844,6 +844,13 @@ footer a {
   padding: 0.9rem 1.1rem;
 }
 
+.sync-field textarea {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.1rem;
+  padding: 0.9rem 1.1rem;
+  resize: vertical;
+}
+
 .sync-autosync {
   display: flex;
   align-items: center;
