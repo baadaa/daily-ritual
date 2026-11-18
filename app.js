@@ -474,16 +474,49 @@ ${m.label}<br>${m.time}
     .join("");
 }
 
+/* ── ANCHOR ── */
+// Local calendar date as YYYY-MM-DD (not UTC, so "today" matches the user's day).
+function localDateKey(d) {
+  const x = d instanceof Date ? d : new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
+
+// Today's anchor = the latest morning sentence logged TODAY; if there isn't one
+// yet, fall back to last night's seed. Derived from the log, so it can't go
+// stale across days and it syncs along with the log.
+function currentAnchor() {
+  const today = localDateKey(new Date());
+  let best = null;
+  for (const e of appState.log) {
+    if (e.id !== "wd-morning" || !e.data || !e.data.sentence) continue;
+    if (localDateKey(e.timestamp) !== today) continue;
+    if (!best || new Date(e.timestamp) > new Date(best.timestamp)) best = e;
+  }
+  return best ? best.data.sentence : appState.tomorrowSeed || "";
+}
+
+// Cards are rendered once up front, so update the anchor bars in place whenever
+// the anchor can have changed (morning submit, day close, tab becoming visible).
+function refreshAnchors() {
+  const anchor = currentAnchor();
+  document.querySelectorAll(".seed-bar").forEach((bar) => {
+    const t = bar.querySelector(".seed-text");
+    if (t) t.textContent = anchor;
+    bar.style.display = anchor ? "" : "none";
+  });
+}
+
 /* ── RENDER CARD ── */
 function renderCard(m) {
-  const anchor = appState.todaySentence || appState.tomorrowSeed || "";
-  const anchorHTML =
-    m.showAnchor && anchor
-      ? `<div class="seed-bar">
+  const anchor = currentAnchor();
+  // Always emit the bar for anchor-showing moments (hidden when empty) so
+  // refreshAnchors() can fill it in later without re-rendering the card.
+  const anchorHTML = m.showAnchor
+    ? `<div class="seed-bar"${anchor ? "" : ' style="display:none"'}>
   <span class="seed-label">Anchor</span>
   <span class="seed-text">${esc(anchor)}</span>
   </div>`
-      : "";
+    : "";
   const fieldsHTML = m.fields
     .map((f) => {
       if (f.type === "checklist") {
@@ -613,6 +646,7 @@ function submitMoment(id) {
   });
   saveState();
   renderLog();
+  refreshAnchors();
   let successText = data[m.successField] || "";
   if (m.successPrefix) successText = m.successPrefix + successText;
   if (m.successExtra && data[m.successExtra])
@@ -743,6 +777,11 @@ function init() {
     switchMoment(detectCurrentMoment(moments), moments);
   }
   renderLog();
+  // A tab or home-screen app left open overnight keeps yesterday's anchor in
+  // the page; re-derive it whenever the page comes back into view.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshAnchors();
+  });
   loadSyncConfig();
   // Auto-sync on load if configured
   try {
